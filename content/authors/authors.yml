@@ -1,0 +1,14 @@
+- name: Janderson Constantino
+  bio: |
+    Eu prefiro ser essa metamorfose ambulante, do que ter aquela velha opinião formada sobre tudo. - Raul Seixas
+  avatar: ./avatars/janderson-constantino.jpg
+  featured: true
+  social:
+    - name: github
+      url: https://github.com/JandersonConstantino
+    - name: twitter
+      url: https://twitter.com/JandConstantino
+    - name: instagram
+      url: https://www.instagram.com/jandersonconstantino
+    - name: linkedin
+      url: https://www.linkedin.com/in/jandersonconstantino
