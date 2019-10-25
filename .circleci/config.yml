@@ -9,15 +9,15 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            # Find a cache corresponding to this specific yarn.lock.json
-            - v1-npm-deps-{{ checksum "yarn.lock.json" }}
+            # Find a cache corresponding to this specific yarn.lock
+            - v1-npm-deps-{{ checksum "yarn.lock" }}
             # Fallback cache to be used
             - v1-npm-deps-
       - run:
           name: Install Dependencies
           command: yarn
       - save_cache:
-          key: v1-npm-deps-{{ checksum "yarn.lock.json" }}
+          key: v1-npm-deps-{{ checksum "yarn.lock" }}
           paths:
             - ./node_modules
       - run:
