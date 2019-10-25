@@ -3,7 +3,7 @@ module.exports = {
     title: `Janderson Constantino - Blog`,
     name: `Janderson Constantino`,
     siteUrl: `https://jandersonconstantino.com`,
-    description: `This is my description that will be used in the meta tags and important for search results`,
+    description: `Blog sobre JavaScript e tecnologia.`,
     hero: {
       heading: `JavaScript && Technology.`,
       maxWidth: 900,
