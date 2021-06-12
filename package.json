@@ -6,7 +6,7 @@
   "scripts": {
     "build": "gatsby build",
     "dev": "gatsby develop",
-    "start": "yarn dev",
+    "start": "yarn clean && yarn dev",
     "clean": "gatsby clean"
   },
   "dependencies": {

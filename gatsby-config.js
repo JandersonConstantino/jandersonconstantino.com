@@ -5,7 +5,7 @@ module.exports = {
     siteUrl: `https://jandersonconstantino.com`,
     description: `Blog sobre JavaScript e tecnologia.`,
     hero: {
-      heading: `JavaScript && Technology.`,
+      heading: `Blog pessoal sobre tecnologia.`,
       maxWidth: 900,
     },
     social: [
