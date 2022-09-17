@@ -1,0 +1,365 @@
+---
+title: Porque parei de usar mocks no graphQL
+author: Janderson Constantino
+date: 2022-09-16
+hero: ./images/hero.jpeg
+excerpt: Porque parei de usar mocks no graphQL
+---
+
+### Introdução
+
+Em 2018 comecei meus estudos de testes unitários em desenvolvimento de softwares, logo após a cultura de testes se tornar um hábito para mim comecei a enxergar outros pontos importantes a levar em consideração na escrita dos testes, a organização dos testes!
+
+### Os 3 A's
+
+Acredito que os 3 A's são atualmente o padrão mais utilizado para escrita de testes. Esses As representam `Arrange, Act e Assert`, o padrão de escrita utilizando esse pattern deve sempre seguir essa ordem. Vejamos uma breve explicação de cada um dos As:
+
+- Arrange: Nessa primeira parte definimos quais são os recursos que nosso caso de teste vai precisar. Normalmente valores que serão utilizados de input para o código que será testado;
+- Act: Ações, aqui disparamos as chamadas do caso de testes, ex: chamar a função que será validada no caso de teste;
+- Assert: Aqui validamos o resultado obtido, assim concluindo o teste.
+
+Vamos testar por exemplo uma função que avalia se o um valor é numérico.
+
+```js
+function isOnlyNumber(value) {
+  return /^\d+$/.test(value)
+}
+
+// tests
+it('123141341 must be true', () => {
+  // Arrange
+  const value = '123141341'
+  const expectedValue = true
+
+  // Act
+  const result = isOnlyNumber(value)
+
+  // Assert
+  expect(result).toEqual(expectedValue)
+})
+
+it('abcd1234 must be false', () => {
+  // Arrange
+  const value = 'abcd1234'
+  const expectedValue = false
+
+  // Act
+  const result = isOnlyNumber(value)
+
+  // Assert
+  expect(result).toEqual(expectedValue)
+})
+```
+
+É um padrão agradável, pensando em um caso de teste simples. Porém se levarmos em consideração esse padrão no mundo real, pode tornar caótimo o caso de teste em alguns pontos.
+
+### Testes no mundo real
+
+Vejamos por exemplo, esse hook de fetch de dados em graphQL com apenas 2 casos de teste.
+
+```jsx
+import { useMemo } from "react";
+import { useQuery, gql } from "@apollo/client";
+
+export const QUERY = gql`
+  query getList($description: String) {
+    list_of_items(description: $description) {
+      id
+      description
+    }
+  }
+`;
+
+export function useListFetcher(variables, options) {
+  const { data, error, loading } = useQuery(QUERY, {
+    variables,
+    ...options,
+  });
+
+  const items = useMemo(() => data?.list_of_items ?? [], [data]);
+
+  return { items, error, loading };
+}
+```
+
+Agora seus casos de teste, aqui ainda não consideramos validações como erro, loading, entre outros.
+Mas o nosso arquivo de teste já chega a quase 100 linhas, sendo a maioria duplicado.
+Importante perceber que quando trazemos os 3A's para um caso real, se tratando do front-end por muitas vezes precisando fazer asserts no meio do caso de teste para que seja possível testar comportamentos que dependem de ações assíncronas, ou em testes de integração.
+
+```jsx
+// tests
+import { MockedProvider } from "@apollo/client/testing";
+import { renderHook, waitFor } from "@testing-library/react";
+import { useListFetcher, QUERY } from "./useListFetcher";
+
+describe("useListFetcher", () => {
+  it("items must return an array with fetched items", async () => {
+    // Arrange
+    const mocks = [
+      {
+        request: { query: QUERY },
+        result: {
+          data: {
+            list_of_items: [
+              { id: 1, description: "One" },
+              { id: 2, description: "Two" },
+              { id: 3, description: "Three" },
+            ],
+          },
+        },
+      },
+    ];
+    const { result } = createHook({ mocks });
+
+    // Act
+    // Dessa vez não teve ações disparadas pelo teste
+
+    // Assert
+    await waitFor(() => {
+      expect(result.current.items.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("items must be filtered by description variable", async () => {
+    const mocks = [
+      {
+        request: { query: QUERY },
+        result: {
+          data: {
+            list_of_items: [
+              { id: 1, description: "One" },
+              { id: 2, description: "Two" },
+              { id: 3, description: "Three" },
+            ],
+          },
+        },
+      },
+      {
+        request: {
+          query: QUERY,
+          variables: {
+            description: "wo",
+          },
+        },
+        result: {
+          data: {
+            list_of_items: [{ id: 2, description: "Two" }],
+          },
+        },
+      },
+    ];
+    const description = "wo";
+    const expectedResult = [{ id: 2, description: "Two" }];
+    const { result, rerender } = createHook({
+      mocks,
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(3);
+    });
+
+    rerender({ description });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(1);
+    });
+    expect(result.current.items).toEqual(expectedResult);
+  });
+});
+
+const createHook = ({ variables, options, mocks }) =>
+  renderHook((a, b) => useListFetcher(a, b), {
+    initialProps: {
+      variables,
+      options,
+    },
+    wrapper: ({ children }) => (
+      <MockedProvider mocks={mocks} addTypename={false}>
+        {children}
+      </MockedProvider>
+    ),
+  });
+```
+
+Por mais que sigamos boas práticas de evitar código duplicado, criando uma função que faz o wrapper do hook para reutiliza-la, ainda sim ficamos com muitos mocks por caso de teste.
+
+Quando confrontei essa realidade, passei a criar arquivos com os objetos de mock do GraphQL para evitar a duplicação e simplificar as modificações de casos de teste por mudanças de contrato.
+Por um tempo isso funcionou, porém, por muitas vezes precisamos testar casos específicos com parâmetros específicos.
+
+Além de testes de integração que por exemplo, podemos validar se ao retirar o filtro, o fetch ocorre e carrega os dados anteriores. Esse é um caso muito importante de se levar em consideração, pois o `MockedProvider` do GraphQL chama cada item do mock apenas uma vez, e caso não possua mock para qualquer chamada que ele realize, o caso de teste irá expor essa informação.
+
+Então como podemos fazer para melhorar?
+
+### E agora, quem poderá nos <s>defender</s> ajudar?
+
+Eis que surge o [MSW - Mock Service Worker](https://mswjs.io/)!
+
+O MSW é uma biblioteca incrível que cabe várias publicações para explicar seus pontos de uso no dia a dia, convido todos a ler sua documentação com carinho e avaliar o quanto seu uso pode ser produtivo.
+
+Se não acredita, da uma olhada no que o Kent C. Dodds acha da biblioteca, [clicando aqui](https://kentcdodds.com/blog/stop-mocking-fetch).
+
+Trazendo de forma resumida, o MSW é capaz de criar interceptores de requisições, e utiliza o [express](https://expressjs.com/) para que possamos interceptar e responder requisições com mocks, seja nos testes unitários ou executando a publicação para trabalhar com dados mockados.
+
+### Criando um mock no MSW para nosso hook de fetch
+
+Vamos entender um pouco sobre os arquivo que vamos criar:
+
+- server: O servidor que executará o mocks, devemos exportar ele para que seja possível adicionar mocks que não estejam definidos por padrão.
+- use-server: O arquivo que possui o start, reset e stop do servidor em funções utilizadas pelo jest (beforeAll, beforeEach, afterAll).
+- MockProvider: O provider que utilizaremos nos mocks com MSW, lembrando que não podemos utilizar o mocked provider, pois as chamadas serão executadas, porém com o MSW configurado, ele irá interceptar essas requisições.
+- getList: vou criar os mocks fora do arquivo handlers e importar no handler, tornando mais fácil a localização e manutenção dos mocks.
+- handlers: O arquivo que recebe todas as chamadas que serão mockadas, tanto REST quanto GraphQL.
+
+Vamos lá!
+
+Arquivo de setup do servidor do msw **exportando** o server,
+```js
+// mocks/server.js
+import { setupServer } from 'msw/node'
+import { handlers } from './handlers'
+
+export const server = setupServer(...handlers)
+```
+
+Você pode também optar em importar esse arquivo automaticamente em todos os arquivos de teste utilizando a configuração `setupFilesAfterEnv` do jest por exemplo. Eu prefiro importar o uso do mocks apenas nos arquivos que utilizarão.
+
+```js
+// mocks/use-server.js
+import { server } from "./server";
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+```
+
+O client do apollo que não poderá ser um mock, para que seja possível interceptar o request.
+```js
+// mocks/MockProvider.js
+import { ApolloProvider, ApolloClient, InMemoryCache } from "@apollo/client";
+
+const client = new ApolloClient({
+  uri: "http://localhost:333",
+  cache: new InMemoryCache(),
+});
+
+export const MockProvider = ({ children }) => {
+  return <ApolloProvider client={client}>{children}</ApolloProvider>;
+};
+```
+
+Perceba que nesse arquivo, definimos uma lógica para que valide se o filtro utilizado existe no mock, fazendo com que não seja necessário a criação de um mock do graphql para cada input possível de dado.
+```js
+// mocks/queries/getList.js
+import { graphql } from "msw";
+
+const MOCK = [
+  { id: 1, description: "One" },
+  { id: 2, description: "Two" },
+  { id: 3, description: "Three" },
+];
+
+const handlers = [
+  graphql.query("getList", (req, res, ctx) => {
+    const description = req?.variables?.description;
+    let result = MOCK;
+
+    if (description) {
+      result = result.filter((x) => ~x.description.indexOf(description));
+    }
+
+    return res(ctx.data({ list_of_items: result }));
+  }),
+];
+
+export default handlers;
+```
+
+E por fim, o arquivo handlers que junta todos os handlers para entregar ao MSW.
+
+```js
+// mocks/handlers.js
+import getList from "./queries/getList";
+
+export const handlers = [...getList];
+
+```
+
+### Utilizando nosso mock via MSW
+
+Criamos mais um caso de teste, onde neste momento valida se existe um retorno para a description Xpto. Porém, não foram necessários mais mocks ou modificações significativas no arquivo de teste. Pois o MSW já estava preparado para suportar essas modificações.
+
+```jsx
+import { renderHook, waitFor } from "@testing-library/react";
+import { useListFetcher } from "./useListFetcher";
+
+// importando o nosso novo provider
+import { MockProvider } from "mocks/MockProvider";
+
+// importando as chamadas para inicializar, resetar e parar os servidor
+import "mocks/use-server";
+
+describe("useListFetcher", () => {
+  it("items must return an array with fetched items", async () => {
+    // Arrange
+    const { result } = createHook();
+
+    // Act
+    // Dessa vez não teve ações disparadas pelo teste
+
+    // Assert
+    await waitFor(() => {
+      expect(result.current.items.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("items must be filtered by description variable", async () => {
+    const description = "wo";
+    const expectedResult = [{ id: 2, description: "Two" }];
+    const { result, rerender } = createHook();
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(3);
+    });
+
+    rerender({ description });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(1);
+    });
+    expect(result.current.items).toEqual(expectedResult);
+  });
+
+  // novo caso de teste
+  it("items must be an empty array when items not found with description", async () => {
+    const description = "Xpto";
+    const expectedResult = [];
+    const { result, rerender } = createHook();
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(3);
+    });
+
+    rerender({ description });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(0);
+    });
+    expect(result.current.items).toEqual(expectedResult);
+  });
+});
+
+const createHook = ({ variables, options } = {}) =>
+  renderHook((a, b) => useListFetcher(a, b), {
+    initialProps: {
+      variables,
+      options,
+    },
+    wrapper: ({ children }) => <MockProvider>{children}</MockProvider>,
+  });
+```
+
+### Conclusão
+
+Podemos concluir que o MSW pode simplificar de forma significativa os nossos testes unitários e de integração, trazendo uma proposta mais elegante de trabalhar com os mocks e diminuindo significativamente a complexidade cognitiva de leitura dos nossos testes.
+
+O código exibido neste post pode ser consultado através [desta url]()
